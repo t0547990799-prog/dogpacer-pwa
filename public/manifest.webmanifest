@@ -1,0 +1,14 @@
+{
+  "name": "dogPACER Coach",
+  "short_name": "dogPACER",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f7fafe",
+  "theme_color": "#d5031d",
+  "lang": "he",
+  "dir": "rtl",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
