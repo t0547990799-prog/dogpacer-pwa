@@ -1,13 +1,22 @@
 import { useEffect, useState } from 'react'
 import { addDoc, collection, getDocs, query, where } from 'firebase/firestore'
 import { db, auth } from '../firebase'
+import { getProgramsForModel, findProgramById } from '../data/programs'
 
 export default function Workout(){
   const [dogs, setDogs] = useState([])
   const [dogId, setDogId] = useState('')
-  const [mode, setMode] = useState('manual') // manual | timer
+  const [dogModel, setDogModel] = useState('LF-3.1')
+
+  // תוכניות מובנות
+  const [availablePrograms, setAvailablePrograms] = useState([])
+  const [programId, setProgramId] = useState('')
+
+  // מצבי אימון: ידני / טיימר / תוכנית
+  const [mode, setMode] = useState('manual')
   const [elapsed, setElapsed] = useState(0)
   const [timerId, setTimerId] = useState(null)
+
   const [f, setF] = useState({
     minutes:'', speedKmh:'', inclinePercent:'', heartBpm:'', tempC:'',
     feelScore:'3', notes:''
@@ -19,35 +28,86 @@ export default function Workout(){
       const snap = await getDocs(q)
       const list = snap.docs.map(d=>({id:d.id, ...d.data()}))
       setDogs(list)
-      if (list[0]) setDogId(list[0].id)
+      if (list[0]) {
+        const model = list[0].treadmillModel || 'LF-3.1'
+        setDogId(list[0].id)
+        setDogModel(model)
+        setAvailablePrograms(getProgramsForModel(model))
+      }
     }
     load()
   }, [])
+
+  // כשמשנים כלב - לעדכן דגם ותוכניות
+  useEffect(() => {
+    const d = dogs.find(x => x.id === dogId)
+    const model = d?.treadmillModel || 'LF-3.1'
+    setDogModel(model)
+    setAvailablePrograms(getProgramsForModel(model))
+    setProgramId('')
+    if (mode === 'program') setMode('manual')
+  }, [dogId])
 
   function start(){ if (timerId) return; const id = setInterval(()=>setElapsed(e=>e+1), 1000); setTimerId(id) }
   function stop(){ if (timerId) { clearInterval(timerId); setTimerId(null) } }
   function reset(){ stop(); setElapsed(0) }
 
+  function chooseProgram(pid) {
+    setProgramId(pid)
+    const p = findProgramById(pid)
+    if (p?.durationMinutes) {
+      setF(prev => ({ ...prev, minutes: String(p.durationMinutes) }))
+    }
+    setMode('program')
+  }
+
   async function save(){
     if (!dogId) { alert('בחר כלב'); return }
-    const durationSec = mode==='manual' ? Math.max(0, Number(f.minutes||0)*60) : elapsed
+
+    const durationSec =
+      mode === 'manual' ? Math.max(0, Number(f.minutes||0)*60) :
+      mode === 'timer' ? elapsed :
+      mode === 'program' ? Math.max(0, Number(f.minutes||0)*60) : 0
+
     const speed = f.speedKmh ? Number(f.speedKmh) : null
     const incline = f.inclinePercent ? Number(f.inclinePercent) : null
     const bpm = f.heartBpm ? Number(f.heartBpm) : null
     const temp = f.tempC ? Number(f.tempC) : null
-    if (speed && (speed < 0.8 || speed > 12)) { alert('מהירות בין 0.8 ל־12'); return }
-    if (incline && (incline < 0 || incline > 15)) { alert('שיפוע בין 0 ל־15'); return }
+
+    if (mode !== 'program') {
+      if (speed && (speed < 0.8 || speed > 12)) { alert('מהירות בין 0.8 ל־12'); return }
+      if (incline && (incline < 0 || incline > 15)) { alert('שיפוע בין 0 ל־15'); return }
+    }
     if (bpm && (bpm < 40 || bpm > 260)) { alert('דופק בין 40 ל־260'); return }
     if (temp && (temp < 36 || temp > 41.5)) { alert('טמפ׳ בין 36 ל־41.5'); return }
 
+    const prog = programId ? findProgramById(programId) : null
+
     await addDoc(collection(db,'workouts'), {
       ownerId: auth.currentUser.uid,
-      dogId, date: new Date(),
-      durationSec, speedKmh: speed, inclinePercent: incline, heartBpm: bpm, tempC: temp,
-      feelScore: Number(f.feelScore), notes: f.notes || null, createdAt: new Date()
+      dogId,
+      date: new Date(),
+      durationSec,
+      // בתוכנית מובנית המהירות/שיפוע משתנה - נשמור null
+      speedKmh: mode === 'program' ? null : speed,
+      inclinePercent: mode === 'program' ? null : incline,
+      heartBpm: bpm,
+      tempC: temp,
+      feelScore: Number(f.feelScore),
+      notes: f.notes || null,
+      // שדות תוכנית
+      programId: prog?.id || null,
+      programName: prog?.name || null,
+      programModel: prog?.model || null,
+      createdAt: new Date()
     })
     alert('האימון נשמר')
-    reset(); setF({minutes:'', speedKmh:'', inclinePercent:'', heartBpm:'', tempC:'', feelScore:'3', notes:''})
+
+    // איפוס
+    reset()
+    setF({minutes:'', speedKmh:'', inclinePercent:'', heartBpm:'', tempC:'', feelScore:'3', notes:''})
+    setProgramId('')
+    setMode('manual')
   }
 
   return (
@@ -60,11 +120,33 @@ export default function Workout(){
           {dogs.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
 
+        {/* מצב אימון */}
         <div className="row">
-          <button className="btn" onClick={()=>setMode('timer')} disabled={mode==='timer'}>טיימר</button>
-          <button className="btn" onClick={()=>setMode('manual')} disabled={mode==='manual'}>הזנה ידנית</button>
+          <button className="btn" onClick={()=>{ setMode('timer'); setProgramId('') }} disabled={mode==='timer'}>טיימר</button>
+          <button className="btn" onClick={()=>{ setMode('manual'); setProgramId('') }} disabled={mode==='manual'}>הזנה ידנית</button>
+          <button className="btn" onClick={()=> setMode('program')} disabled={mode==='program'}>תוכנית מובנית</button>
         </div>
 
+        {/* בחירת תוכנית לפי דגם */}
+        {mode==='program' && (
+          <div className="card" style={{display:'grid', gap:8}}>
+            <div style={{fontSize:12, color:'#666'}}>דגם: <strong>{dogModel}</strong></div>
+            <label>בחר תוכנית</label>
+            <select className="select" value={programId} onChange={e=>chooseProgram(e.target.value)}>
+              <option value="">— בחר תוכנית —</option>
+              {availablePrograms.map(p=>(
+                <option key={p.id} value={p.id}>{p.name}</option>
+              ))}
+            </select>
+            {programId && (
+              <div style={{fontSize:12, color:'#555'}}>
+                משך מומלץ: {findProgramById(programId)?.durationMinutes || '—'} דק׳
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* טיימר או משך ידני */}
         {mode==='timer' ? (
           <div className="card" style={{textAlign:'center'}}>
             <div style={{fontSize:36, marginBottom:12}}>
@@ -77,17 +159,43 @@ export default function Workout(){
             </div>
           </div>
         ) : (
-          <input className="input" placeholder="משך בדקות" type="number" value={f.minutes} onChange={e=>setF({...f, minutes:e.target.value})}/>
+          <input
+            className="input"
+            placeholder="משך בדקות"
+            type="number"
+            value={f.minutes}
+            onChange={e=>setF({...f, minutes:e.target.value})}
+          />
         )}
 
-        <div className="row">
-          <input className="input" placeholder="מהירות (קמ״ש)" type="number" step="0.1" value={f.speedKmh} onChange={e=>setF({...f, speedKmh:e.target.value})}/>
-          <input className="input" placeholder="שיפוע (%)" type="number" step="0.5" value={f.inclinePercent} onChange={e=>setF({...f, inclinePercent:e.target.value})}/>
-        </div>
+        {/* שדות מהירות/שיפוע – מוסתרים במצב 'תוכנית' */}
+        {mode!=='program' && (
+          <div className="row">
+            <input
+              className="input"
+              placeholder="מהירות (קמ״ש)"
+              type="number"
+              step="0.1"
+              value={f.speedKmh}
+              onChange={e=>setF({...f, speedKmh:e.target.value})}
+            />
+            <input
+              className="input"
+              placeholder="שיפוע (%)"
+              type="number"
+              step="0.5"
+              value={f.inclinePercent}
+              onChange={e=>setF({...f, inclinePercent:e.target.value})}
+            />
+          </div>
+        )}
+
+        {/* מדדים ידניים */}
         <div className="row">
           <input className="input" placeholder="דופק (bpm)" type="number" value={f.heartBpm} onChange={e=>setF({...f, heartBpm:e.target.value})}/>
           <input className="input" placeholder="טמ׳ גוף (°C)" type="number" step="0.1" value={f.tempC} onChange={e=>setF({...f, tempC:e.target.value})}/>
         </div>
+
         <div className="row">
           <label>איך הרגיש (1-5)</label>
           <select className="select" value={f.feelScore} onChange={e=>setF({...f, feelScore:e.target.value})}>
@@ -98,6 +206,7 @@ export default function Workout(){
             <option value="5">5 - מצוין</option>
           </select>
         </div>
+
         <textarea className="textarea" rows="3" placeholder="הערות" value={f.notes} onChange={e=>setF({...f, notes:e.target.value})}/>
         <button className="btn" onClick={save}>שמור אימון</button>
       </div>

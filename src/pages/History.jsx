@@ -41,13 +41,21 @@ export default function History(){
 
       {items.map(w=>(
         <div key={w.id} className="card">
-          <div style={{display:'flex', justifyContent:'space-between'}}>
+          <div style={{display:'flex', justifyContent:'space-between', gap:8, flexWrap:'wrap'}}>
             <strong>{toJsDate(w.date).toLocaleString('he-IL')}</strong>
             <span className="badge">{Math.round((w.durationSec||0)/60)} דק׳</span>
           </div>
+
+          {w.programName && (
+            <div style={{marginTop:6, fontSize:14}}>
+              תוכנית: <strong>{w.programName}</strong> {w.programModel ? `(${w.programModel})` : ''}
+            </div>
+          )}
+
           <div style={{fontSize:14, color:'#555', marginTop:6}}>
             מהירות {w.speedKmh ?? '—'} • שיפוע {w.inclinePercent ?? '—'} • דופק {w.heartBpm ?? '—'} • °C {w.tempC ?? '—'} • הרגיש {w.feelScore ?? '—'}
           </div>
+
           {w.notes && <div style={{marginTop:6}}>{w.notes}</div>}
         </div>
       ))}
