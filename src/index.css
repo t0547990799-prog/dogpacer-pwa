@@ -66,3 +66,11 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+html, body { margin:0; padding:0; }
+.container { max-width: 960px; margin: 0 auto; padding: 16px; }
+.card { background:#111827; border:1px solid #374151; border-radius:12px; padding:16px; }
+.nav { background:#0b1220; border-bottom:1px solid #1f2937; padding:10px 0; margin-bottom:16px; }
+a { color:#93c5fd; text-decoration:none; }
+a.active { font-weight:700; }
+.btn { background:#2563eb; color:#fff; border:0; padding:8px 12px; border-radius:8px; }
