@@ -12,8 +12,6 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 }
 
-console.log('FIREBASE CONFIG LOADED', firebaseConfig) // זמני לבדיקה
-
 const app = initializeApp(firebaseConfig)
 export const auth = getAuth(app)
 export const db = getFirestore(app)
