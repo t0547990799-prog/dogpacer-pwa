@@ -1,4 +1,10 @@
 // src/App.jsx
+// למעלה בראש הקובץ
+import ProgramPicker from './pages/ProgramPicker'
+
+// ... בתוך createBrowserRouter([...]) ב-childrens של '/'
+{ path: 'programs', element: <ProgramPicker /> },
+
 import { createBrowserRouter, RouterProvider, Outlet } from 'react-router-dom'
 import RequireAuth from './components/RequireAuth'
 import NavBar from './components/NavBar'
@@ -46,3 +52,4 @@ export default function App() {
     />
   )
 }
+

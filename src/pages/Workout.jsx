@@ -1,194 +1,229 @@
-import { useEffect, useState } from 'react'
-import { addDoc, collection, getDocs, query, where } from 'firebase/firestore'
-import { db, auth } from '../firebase'
-import { getProgramsForModel, findProgramById } from '../data/programs'
-import ProgramHelp from '../components/ProgramHelp'
-import ProgramChart from '../components/ProgramChart'
+// src/pages/Workout.jsx
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams, useNavigate } from 'react-router-dom'
+import { addDoc, collection, serverTimestamp } from 'firebase/firestore'
+import { auth, db } from '../firebase'
+import { PROGRAMS, UNITS, totalMinutes, avgSpeed } from '../programs/library'
+import SegmentBar from '../components/SegmentBar'
+import { speak, stopSpeak } from '../utils/tts'
+
+function useTick(running){
+  const [tick, setTick] = useState(0)
+  useEffect(()=>{
+    if (!running) return
+    const id = setInterval(()=> setTick(t => t + 1), 1000)
+    return () => clearInterval(id)
+  }, [running])
+  return tick
+}
 
 export default function Workout(){
-  const [dogs, setDogs] = useState([])
-  const [dogId, setDogId] = useState('')
-  const [dogModel, setDogModel] = useState('LF-3.1')
+  const [params] = useSearchParams()
+  const nav = useNavigate()
 
-  const [availablePrograms, setAvailablePrograms] = useState([])
-  const [programId, setProgramId] = useState('')
+  // בחירת תוכנית
+  const qProg = params.get('program') || localStorage.getItem('dp_selected_program') || ''
+  const program = useMemo(()=> PROGRAMS[qProg] || null, [qProg])
 
-  const [mode, setMode] = useState('manual') // manual | timer | program
-  const [elapsed, setElapsed] = useState(0)
-  const [timerId, setTimerId] = useState(null)
-  const [helpOpen, setHelpOpen] = useState(false)
+  // מצב אימון
+  const [running, setRunning] = useState(false)
+  const [paused, setPaused] = useState(false)
+  const [idx, setIdx] = useState(0)              // אינדקס מקטע
+  const [secInSeg, setSecInSeg] = useState(0)    // שניות בתוך המקטע
+  const [manualMode, setManualMode] = useState(!program || (program.segments||[]).length === 0)
 
-  const [f, setF] = useState({
-    minutes:'', speedKmh:'', inclinePercent:'', heartBpm:'', tempC:'',
-    feelScore:'3', notes:''
-  })
+  // מדדים ידניים
+  const [heart, setHeart] = useState('')
+  const [temp, setTemp] = useState('')
+  const [feel, setFeel] = useState('')
 
-  useEffect(() => {
-    const load = async()=> {
-      const q = query(collection(db,'dogs'), where('ownerId','==', auth.currentUser.uid))
-      const snap = await getDocs(q)
-      const list = snap.docs.map(d=>({id:d.id, ...d.data()}))
-      setDogs(list)
-      if (list[0]) {
-        const model = list[0].treadmillModel || 'LF-3.1'
-        setDogId(list[0].id)
-        setDogModel(model)
-        setAvailablePrograms(getProgramsForModel(model))
+  // הגדרות
+  const [tts, setTts] = useState(()=> localStorage.getItem('dp_tts') !== '0')
+
+  // טיימר כל שניה
+  const tick = useTick(running && !paused)
+  const prevAnnounced = useRef(-1) // כדי שלא נקריא כמה פעמים
+
+  useEffect(()=> { localStorage.setItem('dp_tts', tts ? '1' : '0') }, [tts])
+
+  const segs = program?.segments || []
+  const hasSegs = segs.length > 0
+
+  const seg = hasSegs ? segs[idx] : null
+  const segSeconds = (seg?.min || 0) * 60
+  const progressPct = segSeconds ? (secInSeg / segSeconds) * 100 : 0
+
+  // התקדמות בזמן אמת
+  useEffect(()=>{
+    if (!running || paused || !hasSegs) return
+    if (!seg) return
+    // תחילת מקטע - הכרזה
+    if (prevAnnounced.current !== idx){
+      prevAnnounced.current = idx
+      if (tts) {
+        const text = `מתחיל מקטע ${idx+1}. מהירות ${seg.speed} ${UNITS}. למשך ${seg.min} דקות.`
+        speak(text)
       }
     }
-    load()
-  }, [])
+    if (secInSeg >= segSeconds){
+      // מעבר למקטע הבא
+      if (idx < segs.length - 1){
+        setIdx(i => i + 1)
+        setSecInSeg(0)
+      } else {
+        // סיום אימון
+        finishSession('program')
+      }
+    } else {
+      const id = setTimeout(()=> setSecInSeg(s => s + 1), 1000)
+      return () => clearTimeout(id)
+    }
+  }, [tick, running, paused, idx, segSeconds, seg, hasSegs, tts])
 
-  useEffect(() => {
-    const d = dogs.find(x => x.id === dogId)
-    const model = d?.treadmillModel || 'LF-3.1'
-    setDogModel(model)
-    setAvailablePrograms(getProgramsForModel(model))
-    setProgramId('')
-    if (mode === 'program') setMode('manual')
-  }, [dogId])
-
-  function start(){ if (timerId) return; const id = setInterval(()=>setElapsed(e=>e+1), 1000); setTimerId(id) }
-  function stop(){ if (timerId) { clearInterval(timerId); setTimerId(null) } }
-  function reset(){ stop(); setElapsed(0) }
-
-  function chooseProgram(pid) {
-    setProgramId(pid)
-    const p = findProgramById(pid)
-    if (p?.durationMinutes) setF(prev => ({ ...prev, minutes: String(p.durationMinutes) }))
-    setMode('program')
+  function start(){
+    if (manualMode){
+      setRunning(true); setPaused(false)
+      return
+    }
+    if (!hasSegs){
+      alert('לתוכנית אין מקטעים. עבור ל"בחירת תוכנית" והשלם ערכים')
+      return
+    }
+    setRunning(true); setPaused(false)
+    // אם התחלנו מחדש, נשמיע פתיח
+    if (tts) speak(`מתחיל אימון ${program.name}. סה״כ ${totalMinutes(segs)} דקות. ממוצע ${avgSpeed(segs)} ${UNITS}.`)
   }
 
-  async function save(){
-    if (!dogId) { alert('בחר כלב'); return }
-
-    const durationSec =
-      mode === 'manual' ? Math.max(0, Number(f.minutes||0)*60) :
-      mode === 'timer' ? elapsed :
-      mode === 'program' ? Math.max(0, Number(f.minutes||0)*60) : 0
-
-    const speed = f.speedKmh ? Number(f.speedKmh) : null
-    const incline = f.inclinePercent ? Number(f.inclinePercent) : null
-    const bpm = f.heartBpm ? Number(f.heartBpm) : null
-    const temp = f.tempC ? Number(f.tempC) : null
-
-    if (mode !== 'program') {
-      if (speed && (speed < 0.8 || speed > 12)) { alert('מהירות בין 0.8 ל־12'); return }
-      if (incline && (incline < 0 || incline > 15)) { alert('שיפוע בין 0 ל־15'); return }
+  function pause(){ setPaused(p => !p) }
+  function stop(){
+    if (confirm('לעצור את האימון?')){
+      finishSession(manualMode ? 'manual' : 'program')
     }
-    if (bpm && (bpm < 40 || bpm > 260)) { alert('דופק בין 40 ל־260'); return }
-    if (temp && (temp < 36 || temp > 41.5)) { alert('טמפ׳ בין 36 ל־41.5'); return }
+  }
 
-    const prog = programId ? findProgramById(programId) : null
+  function nextSeg(){
+    if (!hasSegs) return
+    if (idx < segs.length - 1){
+      setIdx(i => i + 1); setSecInSeg(0)
+    }
+  }
+  function prevSeg(){
+    if (!hasSegs) return
+    if (idx > 0){
+      setIdx(i => i - 1); setSecInSeg(0)
+    }
+  }
 
-    await addDoc(collection(db,'workouts'), {
-      ownerId: auth.currentUser.uid,
-      dogId,
-      date: new Date(),
-      durationSec,
-      speedKmh: mode === 'program' ? null : speed,
-      inclinePercent: mode === 'program' ? null : incline,
-      heartBpm: bpm,
-      tempC: temp,
-      feelScore: Number(f.feelScore),
-      notes: f.notes || null,
-      programId: prog?.id || null,
-      programName: prog?.name || null,
-      programModel: prog?.model || null,
-      createdAt: new Date()
-    })
-    alert('האימון נשמר')
+  // שמירה ל-Firestore
+  async function finishSession(kind){
+    stopSpeak()
+    const uid = auth.currentUser?.uid
+    const payload = {
+      kind, // 'program' | 'manual'
+      programId: program?.id || null,
+      createdAt: serverTimestamp(),
+      localEndedAt: new Date().toISOString(),
+      metrics: {
+        heart: heart || null,
+        temp: temp || null,
+        feel: feel || null,
+      },
+    }
 
-    reset()
-    setF({minutes:'', speedKmh:'', inclinePercent:'', heartBpm:'', tempC:'', feelScore:'3', notes:''})
-    setProgramId('')
-    setMode('manual')
+    if (kind === 'program' && hasSegs){
+      payload.summary = {
+        totalMinutes: totalMinutes(segs),
+        avgSpeed: avgSpeed(segs),
+        segments: segs,
+      }
+    }
+
+    try{
+      // נשמור תחת users/<uid>/workouts
+      if (!uid) throw new Error('no user')
+      await addDoc(collection(db, 'users', uid, 'workouts'), payload)
+      // אופליין-פרסט: אם אין רשת זה יסתנכרן כשיהיה
+      setRunning(false); setPaused(false); setIdx(0); setSecInSeg(0)
+      alert('האימון נשמר. אפשר לראות בהיסטוריה וסטטיסטיקות.')
+      nav('/history')
+    }catch(e){
+      console.error(e)
+      setRunning(false); setPaused(false)
+      alert('נשמר מקומית וייסתנכרן מאוחר יותר. תוכל לראות בהיסטוריה כאשר יהיה חיבור.')
+      nav('/history')
+    }
   }
 
   return (
-    <>
-      <h1>אימון מהיר</h1>
-
-      <div className="card" style={{display:'grid', gap:12}}>
-        <label>בחר כלב</label>
-        <select className="select" value={dogId} onChange={e=>setDogId(e.target.value)}>
-          {dogs.map(d=><option key={d.id} value={d.id}>{d.name}</option>)}
-        </select>
-
-        <div className="row">
-          <button className="btn" onClick={()=>{ setMode('timer'); setProgramId('') }} disabled={mode==='timer'}>טיימר</button>
-          <button className="btn" onClick={()=>{ setMode('manual'); setProgramId('') }} disabled={mode==='manual'}>הזנה ידנית</button>
-          <button className="btn" onClick={()=> setMode('program')} disabled={mode==='program'}>תוכנית מובנית</button>
+    <main className="container">
+      <div className="page-head">
+        <h2>אימון</h2>
+        <div className="row" style={{gap:12}}>
+          <label className="row" style={{gap:8, alignItems:'center'}}>
+            <span className="muted">קול</span>
+            <input type="checkbox" checked={tts} onChange={e=>setTts(e.target.checked)} />
+          </label>
+          <button className="btn ghost" onClick={()=>nav('/programs')}>בחירת תוכנית</button>
         </div>
-
-        {mode==='program' && (
-          <div className="card" style={{display:'grid', gap:8}}>
-            <div style={{fontSize:12, color:'#666'}}>דגם: <strong>{dogModel}</strong></div>
-            <label>בחר תוכנית</label>
-            <select className="select" value={programId} onChange={e=>chooseProgram(e.target.value)}>
-              <option value="">— בחר תוכנית —</option>
-              {availablePrograms.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            {programId && (
-              <>
-                <div style={{fontSize:12, color:'#555'}}>משך מומלץ: {findProgramById(programId)?.durationMinutes || '—'} דק׳</div>
-                <div className="card" style={{marginTop:8}}>
-                  <ProgramChart
-                    segments={(findProgramById(programId)?.segments) || []}
-                    title={`תוכנית ${programId} – מהירות לאורך זמן (קמ״ש)`}
-                  />
-                </div>
-                <div className="row" style={{marginTop:8}}>
-                  <button className="btn" onClick={()=>setHelpOpen(true)}>איך מפעילים במכשיר?</button>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {mode==='timer' ? (
-          <div className="card" style={{textAlign:'center'}}>
-            <div style={{fontSize:36, marginBottom:12}}>
-              {String(Math.floor(elapsed/60)).padStart(2,'0')}:{String(elapsed%60).padStart(2,'0')}
-            </div>
-            <div style={{display:'flex', gap:8, justifyContent:'center'}}>
-              <button className="btn" onClick={start}>התחל</button>
-              <button className="btn" onClick={stop}>עצור</button>
-              <button className="btn" onClick={reset}>איפוס</button>
-            </div>
-          </div>
-        ) : (
-          <input className="input" placeholder="משך בדקות" type="number" value={f.minutes} onChange={e=>setF({...f, minutes:e.target.value})}/>
-        )}
-
-        {mode!=='program' && (
-          <div className="row">
-            <input className="input" placeholder="מהירות (קמ״ש)" type="number" step="0.1" value={f.speedKmh} onChange={e=>setF({...f, speedKmh:e.target.value})}/>
-            <input className="input" placeholder="שיפוע (%)" type="number" step="0.5" value={f.inclinePercent} onChange={e=>setF({...f, inclinePercent:e.target.value})}/>
-          </div>
-        )}
-
-        <div className="row">
-          <input className="input" placeholder="דופק (bpm)" type="number" value={f.heartBpm} onChange={e=>setF({...f, heartBpm:e.target.value})}/>
-          <input className="input" placeholder="טמ׳ גוף (°C)" type="number" step="0.1" value={f.tempC} onChange={e=>setF({...f, tempC:e.target.value})}/>
-        </div>
-
-        <div className="row">
-          <label>איך הרגיש (1-5)</label>
-          <select className="select" value={f.feelScore} onChange={e=>setF({...f, feelScore:e.target.value})}>
-            <option value="1">1 - קשה מאוד</option>
-            <option value="2">2 - קשה</option>
-            <option value="3">3 - בינוני</option>
-            <option value="4">4 - טוב</option>
-            <option value="5">5 - מצוין</option>
-          </select>
-        </div>
-
-        <textarea className="textarea" rows="3" placeholder="הערות" value={f.notes} onChange={e=>setF({...f, notes:e.target.value})}/>
-        <button className="btn" onClick={save}>שמור אימון</button>
       </div>
 
-      <ProgramHelp open={helpOpen} onClose={()=>setHelpOpen(false)} model={dogModel} programId={programId} />
-    </>
+      {!manualMode && program ? (
+        <>
+          <div className="card" style={{marginBottom:12}}>
+            <div className="row" style={{justifyContent:'space-between', alignItems:'center'}}>
+              <div style={{fontWeight:800}}>{program.name}</div>
+              <div className="badge">{totalMinutes(segs)} דק • ממוצע {avgSpeed(segs)} {UNITS}</div>
+            </div>
+            <div style={{marginTop:10}}>
+              <SegmentBar segments={segs} currentIndex={idx} currentPct={progressPct} />
+            </div>
+
+            <div style={{marginTop:12}} className="row" dir="rtl">
+              <button className="btn ghost" onClick={prevSeg} disabled={idx===0}>מקטע קודם</button>
+              <div className="card" style={{display:'flex',gap:12,alignItems:'center'}}>
+                <div>מקטע {idx+1} מתוך {segs.length}</div>
+                <div className="badge">מהירות {seg?.speed ?? '—'} {UNITS}</div>
+                <div className="badge">זמן נוכחי {secInSeg}s / {(seg?.min||0)*60}s</div>
+              </div>
+              <button className="btn ghost" onClick={nextSeg} disabled={idx>=segs.length-1}>מקטע הבא</button>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="card" style={{marginBottom:12}}>
+          <strong>מצב ידני</strong>
+          <div className="muted" style={{marginTop:6}}>לא נבחרה תוכנית או שהתוכנית ריקה. אפשר לעבור ל"בחירת תוכנית" או להפעיל אימון ידני.</div>
+        </div>
+      )}
+
+      <div className="card">
+        <h3 style={{marginTop:0}}>מדדים ידניים</h3>
+        <div className="form-grid" style={{marginTop:8}}>
+          <div>
+            <label>דופק</label>
+            <input className="input" inputMode="numeric" placeholder="לדוגמה 90" value={heart} onChange={e=>setHeart(e.target.value)} />
+          </div>
+          <div>
+            <label>חום גוף</label>
+            <input className="input" inputMode="decimal" placeholder="לדוגמה 38.5" value={temp} onChange={e=>setTemp(e.target.value)} />
+          </div>
+        </div>
+        <div className="form-row">
+          <label>איך הכלב הרגיש באימון</label>
+          <input className="input" placeholder="שמח, רגוע, עייף..." value={feel} onChange={e=>setFeel(e.target.value)} />
+        </div>
+      </div>
+
+      <div className="row" style={{gap:10, marginTop:12, flexWrap:'wrap'}}>
+        {!running ? (
+          <button className="btn lg" onClick={start}>התחל</button>
+        ) : (
+          <>
+            <button className="btn" onClick={pause}>{paused ? 'המשך' : 'השהה'}</button>
+            <button className="btn danger" onClick={stop}>עצור ושמור</button>
+          </>
+        )}
+      </div>
+    </main>
   )
 }
