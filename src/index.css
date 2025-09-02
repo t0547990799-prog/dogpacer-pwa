@@ -1,76 +1,40 @@
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --bg:#0f172a;      /* רקע כהה */
+  --card:#111827;    /* כרטיס */
+  --line:#2b3443;    /* גבול */
+  --text:#e5e7eb;    /* טקסט */
+  --muted:#94a3b8;   /* טקסט משני */
+  --brand:#2563eb;   /* כחול */
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
-}
-a:hover {
-  color: #535bf2;
-}
-
+* { box-sizing: border-box; }
+html, body { margin:0; padding:0; height:100%; }
 body {
-  margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
-  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Heebo", system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans Hebrew", "Open Sans Hebrew", sans-serif;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
-}
-
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
-  }
-  a:hover {
-    color: #747bff;
-  }
-  button {
-    background-color: #f9f9f9;
-  }
-}
-
-html, body { margin:0; padding:0; }
 .container { max-width: 960px; margin: 0 auto; padding: 16px; }
-.card { background:#111827; border:1px solid #374151; border-radius:12px; padding:16px; }
-.nav { background:#0b1220; border-bottom:1px solid #1f2937; padding:10px 0; margin-bottom:16px; }
+.card { background: var(--card); border:1px solid var(--line); border-radius: 14px; padding:16px; }
+
+.nav { background:#0b1220; border-bottom:1px solid var(--line); }
+.nav .wrap { display:flex; gap:12px; align-items:center; justify-content:space-between; }
+.nav strong { font-weight:800; letter-spacing:0.3px; }
+
 a { color:#93c5fd; text-decoration:none; }
 a.active { font-weight:700; }
-.btn { background:#2563eb; color:#fff; border:0; padding:8px 12px; border-radius:8px; }
+
+.btn { background: var(--brand); color:#fff; border:0; padding:10px 14px; border-radius:10px; cursor:pointer; }
+.input {
+  width: 100%; background:#0b1220; color: var(--text);
+  border:1px solid var(--line); border-radius: 10px; padding:12px 14px;
+}
+
+.badge { display:inline-block; background:#0b1220; border:1px solid var(--line); padding:4px 8px; border-radius:999px; color:var(--muted); }
+
+@media (max-width: 780px) {
+  .container { padding: 12px; }
+  .nav .wrap { flex-wrap: wrap; }
+  .nav a, .nav .btn { padding: 10px 12px; }
+}
