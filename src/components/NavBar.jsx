@@ -1,8 +1,16 @@
 import { NavLink } from 'react-router-dom'
-import { signOut } from 'firebase/auth'
+import { signOut, onAuthStateChanged } from 'firebase/auth'
 import { auth } from '../firebase'
+import { useEffect, useState } from 'react'
 
 export default function NavBar(){
+  const [user, setUser] = useState(null)
+
+  useEffect(()=>{
+    const unsub = onAuthStateChanged(auth, u => setUser(u))
+    return () => unsub()
+  },[])
+
   return (
     <div className="nav">
       <div className="wrap container">
@@ -14,7 +22,7 @@ export default function NavBar(){
           <NavLink to="/history" className={({isActive})=> isActive ? 'active' : ''}>היסטוריה</NavLink>
           <NavLink to="/stats" className={({isActive})=> isActive ? 'active' : ''}>סטטיסטיקות</NavLink>
           <NavLink to="/safety" className={({isActive})=> isActive ? 'active' : ''}>בטיחות</NavLink>
-          <button className="btn" onClick={()=>signOut(auth)}>התנתקות</button>
+          {user && <button className="btn" onClick={()=>signOut(auth)}>התנתקות</button>}
         </div>
       </div>
     </div>
