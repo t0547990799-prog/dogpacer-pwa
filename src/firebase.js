@@ -1,17 +1,16 @@
+// מלא כאן את קונפיג Firebase שלך מה־Console (Project settings → SDK setup)
 import { initializeApp } from 'firebase/app'
 import { getAuth } from 'firebase/auth'
 import { getFirestore } from 'firebase/firestore'
 
-// הדבק כאן את הפרטים מה־Firebase Console
-// Firebase Console → Project → Build → Authentication/Firestore
-// Project Overview → לחץ על אייקון </> (Web App) → Copy config
+// דוגמה - החלף בפרטים שלך:
 const firebaseConfig = {
-  apiKey: "AIzaSyATJQHKylhOjNxCjuvKTEAwKN6Ff6rA0y8",
-  authDomain: "dogpacer-9526e.firebaseapp.com",
-  projectId: "dogpacer-9526e",
-  storageBucket: "dogpacer-9526e.firebasestorage.app",
-  messagingSenderId: "866242790915",
-  appId: "1:866242790915:web:7c9c080b9fdfa3fd2bf036"
+  apiKey: "YOUR_API_KEY",
+  authDomain: "YOUR_PROJECT.firebaseapp.com",
+  projectId: "YOUR_PROJECT_ID",
+  storageBucket: "YOUR_PROJECT.appspot.com",
+  messagingSenderId: "SENDER_ID",
+  appId: "APP_ID"
 }
 
 const app = initializeApp(firebaseConfig)

@@ -52,7 +52,7 @@ export default function History(){
             </div>
           )}
 
-          <div style={{fontSize:14, color:'#555', marginTop:6}}>
+          <div style={{fontSize:14, color:'#bbb', marginTop:6}}>
             מהירות {w.speedKmh ?? '—'} • שיפוע {w.inclinePercent ?? '—'} • דופק {w.heartBpm ?? '—'} • °C {w.tempC ?? '—'} • הרגיש {w.feelScore ?? '—'}
           </div>
 

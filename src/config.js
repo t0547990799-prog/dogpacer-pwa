@@ -1,1 +1,1 @@
-export const APP_NAME = 'dogPACER coach';
+export const APP_NAME = 'dogPACER coach'
